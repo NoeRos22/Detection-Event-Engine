@@ -1,0 +1,6 @@
+min_confidence: 0.60
+min_duration_ms: 1500
+gap_tolerance_ms: 800
+cooldown_ms: 30000
+classes_of_interest:
+  - person
