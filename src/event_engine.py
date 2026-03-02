@@ -17,11 +17,7 @@ class EventEngine:
 
         self.cameras_state = {}
 
-        self.count = 1
-
     def process(self, detection: dict) -> list[dict]:
-        self.count += 1
-        print(self.count)
 
         timestamp_ms = detection["timestamp_ms"]
         camera_id = detection["camera_id"]
@@ -49,7 +45,6 @@ class EventEngine:
 
         # Wait until cooldown finishes
         if timestamp_ms < state["cooldown"]:
-            print("cooling")
             return events
         
 
@@ -62,22 +57,15 @@ class EventEngine:
             if state["initial_time"] is None:
                 state["initial_time"] = timestamp_ms
                 state["last_time"] = timestamp_ms
-                print("initial")
                 return events
             
-            
-
-            
-            print("GAP", state["last_time"]-timestamp_ms)
             # ----- SMALL GAP
             if abs(gap) < self.gap_tolerance_ms:
                 state["last_time"] = timestamp_ms
                 state["peak_confidence"] = max(state["peak_confidence"], confidence)
                 state["detection_count"] += 1
 
-
                 # ----- MIN DURATION ACCOMPLISHED
-                print("DURATION", timestamp_ms-state["initial_time"])
                 if (timestamp_ms-state["initial_time"]) > self.min_duration_ms:
                     state["active"] = True
                     events.append({
@@ -99,8 +87,6 @@ class EventEngine:
 
         # ---------ACTIVE
         else:
-
-            print("GAP", state["last_time"]-timestamp_ms)
 
             if gap < self.gap_tolerance_ms:
                 state["last_time"] = timestamp_ms
@@ -125,33 +111,36 @@ class EventEngine:
                 state["peak_confidence"] = 0
                 state["detection_count"] = 0
 
-
-
-
         return events
 
-        
-        
-
-        """
-        Feed one detection record at a time (Done).
-        Returns a list of zero or more event dicts triggered by this detection.
-        Usually returns an empty list.
-
-        detection format:
-        {
-            "timestamp_ms": int,
-            "camera_id": str,
-            "class": str,
-            "confidence": float,
-            "x1": int, "y1": int, "x2": int, "y2": int
-        }
-        """
 
     def flush(self, current_time_ms: int) -> list[dict]:
-        """
-        Call this after the last detection (or periodically in production).
-        Closes any open events that have timed out.
-        Returns any newly closed events.
-        """
-        ...
+        
+        events = []
+
+        for camera_id in self.cameras_state:
+            state = self.cameras_state[camera_id]
+
+            if state["active"]:
+                gap = current_time_ms-state["last_time"]
+                if gap > self.gap_tolerance_ms:
+                    events.append({
+                        "type": "closed",
+                        "camera_id": camera_id,
+                        "class": state["class"],
+                        "opened_at_ms": state["initial_time"],
+                        "closed_at_ms": state["last_time"],
+                        "peak_confidence": state["peak_confidence"], 
+                        "detection_count": state["detection_count"],
+                    })
+                
+                    state["initial_time"] = None
+                    state["cooldown"] = state["last_time"] + self.cooldown_ms
+                    # state["last_time"] = current_time_ms
+                    state["active"] = False
+                    state["peak_confidence"] = 0
+                    state["detection_count"] = 0
+
+            
+
+        return events

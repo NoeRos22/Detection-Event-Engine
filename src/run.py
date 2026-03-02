@@ -1,5 +1,6 @@
 from event_engine import EventEngine
 import csv
+import json
 
 def main():
     engine = EventEngine("../covenant/data/config.yaml")
@@ -18,7 +19,17 @@ def main():
                 "y2": int(row["y2"]),
             }
 
-            print(engine.process(detection))
+            events = engine.process(detection)
+
+            for event in events:
+                print(json.dumps(event))
+
+        last_timestamp = detection["timestamp_ms"]
+
+        print("flush")
+
+        for event in engine.flush(last_timestamp):
+            print(json.dumps(event))
 
 
 if __name__ == "__main__":
