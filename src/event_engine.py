@@ -15,7 +15,7 @@ class EventEngine:
         for classification in config_data["classes_of_interest"]:
             self.classes_of_interest.append(classification)
 
-        self.cameras_state = {}
+        self.cameras = {}
 
     def process(self, detection: dict) -> list[dict]:
 
@@ -29,19 +29,23 @@ class EventEngine:
         # Verify class and confidence
         if classification not in self.classes_of_interest or confidence < self.min_confidence:
             return events
+        
+        key = (camera_id, classification)
 
         # Create state instance
-        if camera_id not in self.cameras_state:
-            self.cameras_state[camera_id] = {
+        if key not in self.cameras:
+            self.cameras[key] = {
                 "active": False,
+                "camera_id": camera_id,
+                "class": classification,
                 "initial_time": None,
                 "last_time": 0,
                 "cooldown": 0, 
-                "peak_confidence": 0,
+                "peak_confidence": 0.0,
                 "detection_count": 0
             }
 
-        state = self.cameras_state[camera_id]
+        state = self.cameras[key]
 
         # Wait until cooldown finishes
         if timestamp_ms < state["cooldown"]:
@@ -55,18 +59,15 @@ class EventEngine:
 
             # -----SET INITIAL TIME
             if state["initial_time"] is None:
-                state["initial_time"] = timestamp_ms
-                state["last_time"] = timestamp_ms
+                self.reset_state(state, detection)
                 return events
             
             # ----- SMALL GAP
-            if abs(gap) < self.gap_tolerance_ms:
-                state["last_time"] = timestamp_ms
-                state["peak_confidence"] = max(state["peak_confidence"], confidence)
-                state["detection_count"] += 1
+            if abs(gap) <= self.gap_tolerance_ms:
+                self.update_state(state, detection)
 
                 # ----- MIN DURATION ACCOMPLISHED
-                if (timestamp_ms-state["initial_time"]) > self.min_duration_ms:
+                if (timestamp_ms-state["initial_time"]) >= self.min_duration_ms:
                     state["active"] = True
                     events.append({
                         "type": "opened",
@@ -80,53 +81,18 @@ class EventEngine:
 
             # ------ BIG GAP
             else:
-                state["initial_time"] = timestamp_ms
-                state["last_time"] = timestamp_ms
-                state["peak_confidence"] = 0
-                state["detection_count"] = 0
+                self.reset_state(state, detection)
 
         # ---------ACTIVE
         else:
 
-            if gap < self.gap_tolerance_ms:
-                state["last_time"] = timestamp_ms
-                state["peak_confidence"] = max(state["peak_confidence"], confidence)
-                state["detection_count"] += 1
+            if gap <= self.gap_tolerance_ms:
+                self.update_state(state, detection)
 
             else:
                 events.append({
                         "type": "closed",
-                        "camera_id": camera_id,
-                        "class": classification,
-                        "opened_at_ms": state["initial_time"],
-                        "closed_at_ms": state["last_time"],
-                        "peak_confidence": state["peak_confidence"], 
-                        "detection_count": state["detection_count"],
-                    })
-                
-                state["initial_time"] = None
-                state["cooldown"] = state["last_time"] + self.cooldown_ms
-                state["last_time"] = timestamp_ms # debería de ser 0??
-                state["active"] = False
-                state["peak_confidence"] = 0
-                state["detection_count"] = 0
-
-        return events
-
-
-    def flush(self, current_time_ms: int) -> list[dict]:
-        
-        events = []
-
-        for camera_id in self.cameras_state:
-            state = self.cameras_state[camera_id]
-
-            if state["active"]:
-                gap = current_time_ms-state["last_time"]
-                if gap > self.gap_tolerance_ms:
-                    events.append({
-                        "type": "closed",
-                        "camera_id": camera_id,
+                        "camera_id": state["camera_id"],
                         "class": state["class"],
                         "opened_at_ms": state["initial_time"],
                         "closed_at_ms": state["last_time"],
@@ -134,13 +100,54 @@ class EventEngine:
                         "detection_count": state["detection_count"],
                     })
                 
-                    state["initial_time"] = None
-                    state["cooldown"] = state["last_time"] + self.cooldown_ms
-                    # state["last_time"] = current_time_ms
-                    state["active"] = False
-                    state["peak_confidence"] = 0
-                    state["detection_count"] = 0
+                
+                state["cooldown"] = state["last_time"] + self.cooldown_ms
 
-            
+                state["active"] = False
+                state["initial_time"] = None
+                state["last_time"] = 0
+                state["peak_confidence"] = 0.0
+                state["detection_count"] = 0
 
         return events
+
+
+    def flush(self, current_time_ms: int) -> list[dict]:
+
+        events = []
+
+        for key in self.cameras:
+            state = self.cameras[key]
+            if state["active"]:
+                gap = current_time_ms-state["last_time"]
+                if gap > self.gap_tolerance_ms:
+                    events.append({
+                        "type": "closed",
+                        "camera_id": state["camera_id"],
+                        "class": state["class"],
+                        "opened_at_ms": state["initial_time"],
+                        "closed_at_ms": state["last_time"],
+                        "peak_confidence": state["peak_confidence"], 
+                        "detection_count": state["detection_count"],
+                    })
+                    
+                    state["cooldown"] = state["last_time"] + self.cooldown_ms
+
+                    state["active"] = False
+                    state["initial_time"] = None
+                    state["last_time"] = 0
+                    state["peak_confidence"] = 0.0
+                    state["detection_count"] = 0
+
+        return events
+    
+    def update_state(self, state, detection):
+        state["last_time"] = detection["timestamp_ms"]
+        state["peak_confidence"] = max(state["peak_confidence"], detection["confidence"])
+        state["detection_count"] += 1
+
+    def reset_state(self, state, detection):
+        state["initial_time"] = detection["timestamp_ms"]
+        state["last_time"] = detection["timestamp_ms"]
+        state["peak_confidence"] = detection["confidence"]
+        state["detection_count"] = 1
