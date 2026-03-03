@@ -13,12 +13,10 @@ class EventEngine:
         self.min_duration_ms = config_data["min_duration_ms"]
         self.gap_tolerance_ms = config_data["gap_tolerance_ms"]
         self.cooldown_ms = config_data["cooldown_ms"]
-        self.classes_of_interest = []
-        for classification in config_data["classes_of_interest"]:
-            self.classes_of_interest.append(classification)
-        self.zones = []
-        for zone in config_data["zones"]:
-            self.zones.append(zone)
+        self.classes_of_interest = config_data["classes_of_interest"]
+        self.zones = config_data["zones"]
+
+        print(self.zones)
 
         self.cameras = {}
 
