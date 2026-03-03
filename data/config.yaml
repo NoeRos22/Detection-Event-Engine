@@ -1,3 +1,10 @@
+zones:
+  - 0
+  - 0
+  - 1920
+  - 1080
+sustain_ms: 400
+out_of_order_ms: 500
 min_confidence: 0.60
 min_duration_ms: 1500
 gap_tolerance_ms: 800

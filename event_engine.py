@@ -7,6 +7,8 @@ class EventEngine:
         with open(config_path, 'r') as file:
             config_data = yaml.safe_load(file)
         
+        self.sustain_ms = config_data["sustain_ms"]
+        self.out_of_order_ms = config_data["out_of_order_ms"]
         self.min_confidence = config_data["min_confidence"]
         self.min_duration_ms = config_data["min_duration_ms"]
         self.gap_tolerance_ms = config_data["gap_tolerance_ms"]
@@ -14,6 +16,9 @@ class EventEngine:
         self.classes_of_interest = []
         for classification in config_data["classes_of_interest"]:
             self.classes_of_interest.append(classification)
+        self.zones = []
+        for zone in config_data["zones"]:
+            self.zones.append(zone)
 
         self.cameras = {}
 
@@ -30,6 +35,14 @@ class EventEngine:
         if classification not in self.classes_of_interest or confidence < self.min_confidence:
             return events
         
+        x_centroid = (detection["x1"]+detection["x2"])/2
+        y_centroid = (detection["y1"]+detection["y2"])/2
+
+        inside = (self.zones[0] <= x_centroid <= self.zones[2]) and (self.zones[1] <= y_centroid <= self.zones[3])
+        
+        if not inside:
+            return events
+        
         key = (camera_id, classification)
 
         # Create state instance
@@ -40,6 +53,7 @@ class EventEngine:
                 "class": classification,
                 "initial_time": None,
                 "last_time": 0,
+                "last_sustain": 0,
                 "cooldown": 0, 
                 "peak_confidence": 0.0,
                 "detection_count": 0
@@ -63,12 +77,13 @@ class EventEngine:
                 return events
             
             # ----- SMALL GAP
-            if abs(gap) <= self.gap_tolerance_ms:
+            if (gap <= self.gap_tolerance_ms) and gap >= (-self.out_of_order_ms):
                 self.update_state(state, detection)
 
                 # ----- MIN DURATION ACCOMPLISHED
                 if (timestamp_ms-state["initial_time"]) >= self.min_duration_ms:
                     state["active"] = True
+                    state["last_sustain"] = timestamp_ms
                     events.append({
                         "type": "opened",
                         "camera_id": camera_id,
@@ -79,6 +94,7 @@ class EventEngine:
                         "detection_count": state["detection_count"],
                     })
 
+
             # ------ BIG GAP
             else:
                 self.reset_state(state, detection)
@@ -86,9 +102,20 @@ class EventEngine:
         # ---------ACTIVE
         else:
 
-            if gap <= self.gap_tolerance_ms:
+            if (gap <= self.gap_tolerance_ms) and gap >= (-self.out_of_order_ms):
+                if (timestamp_ms - state["last_sustain"]) >= self.sustain_ms:
+                    events.append({
+                        "type": "sustained",
+                        "camera_id": camera_id,
+                        "class": classification,
+                        "opened_at_ms": state["initial_time"],
+                        "closed_at_ms": None,
+                        "peak_confidence": state["peak_confidence"], 
+                        "detection_count": state["detection_count"],
+                    })
+                    state["last_sustain"] = timestamp_ms
                 self.update_state(state, detection)
-
+                    
             else:
                 events.append({
                         "type": "closed",
@@ -100,14 +127,7 @@ class EventEngine:
                         "detection_count": state["detection_count"],
                     })
                 
-                
-                state["cooldown"] = state["last_time"] + self.cooldown_ms
-
-                state["active"] = False
-                state["initial_time"] = None
-                state["last_time"] = 0
-                state["peak_confidence"] = 0.0
-                state["detection_count"] = 0
+                self.clear_state(state)
 
         return events
 
@@ -131,23 +151,26 @@ class EventEngine:
                         "detection_count": state["detection_count"],
                     })
                     
-                    state["cooldown"] = state["last_time"] + self.cooldown_ms
-
-                    state["active"] = False
-                    state["initial_time"] = None
-                    state["last_time"] = 0
-                    state["peak_confidence"] = 0.0
-                    state["detection_count"] = 0
+                    self.clear_state(state)
 
         return events
     
     def update_state(self, state, detection):
-        state["last_time"] = detection["timestamp_ms"]
+        state["last_time"] = max(state["last_time"], detection["timestamp_ms"])
         state["peak_confidence"] = max(state["peak_confidence"], detection["confidence"])
         state["detection_count"] += 1
 
     def reset_state(self, state, detection):
         state["initial_time"] = detection["timestamp_ms"]
         state["last_time"] = detection["timestamp_ms"]
+        state["last_sustain"] = detection["timestamp_ms"]
         state["peak_confidence"] = detection["confidence"]
         state["detection_count"] = 1
+
+    def clear_state(self, state):
+        state["cooldown"] = state["last_time"] + self.cooldown_ms
+        state["active"] = False
+        state["initial_time"] = None
+        state["last_time"] = 0
+        state["peak_confidence"] = 0.0
+        state["detection_count"] = 0

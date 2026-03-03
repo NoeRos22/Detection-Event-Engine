@@ -26,8 +26,6 @@ def main():
 
         last_timestamp = detection["timestamp_ms"]
 
-        print("flush")
-
         for event in engine.flush(last_timestamp):
             print(json.dumps(event))
 
