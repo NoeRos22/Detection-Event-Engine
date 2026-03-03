@@ -1,0 +1,7 @@
+min_confidence: 0.60
+min_duration_ms: 1000
+gap_tolerance_ms: 500
+cooldown_ms: 2000
+classes_of_interest:
+  - person
+  - car
