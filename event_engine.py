@@ -16,8 +16,6 @@ class EventEngine:
         self.classes_of_interest = config_data["classes_of_interest"]
         self.zones = config_data["zones"]
 
-        print(self.zones)
-
         self.cameras = {}
 
     def process(self, detection: dict) -> list[dict]:
