@@ -3,9 +3,9 @@ import csv
 import json
 
 def main():
-    engine = EventEngine("../covenant/data/config.yaml")
+    engine = EventEngine("data/config.yaml")
 
-    with open("../covenant/data/detections.csv", newline="", encoding="utf-8") as csvfile:
+    with open("data/detections.csv", newline="", encoding="utf-8") as csvfile:
         reader = csv.DictReader(csvfile) 
         for row in reader:
             detection = {

@@ -2,7 +2,7 @@ import pytest
 import yaml
 from event_engine import EventEngine
 
-config_path = "../data/config_tests.yaml"
+config_path = "data/config_tests.yaml"
 
 def test_event_opens_correctly():
     engine = EventEngine(config_path)
